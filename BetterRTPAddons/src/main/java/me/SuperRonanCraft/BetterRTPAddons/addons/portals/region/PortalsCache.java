@@ -7,6 +7,7 @@ import com.comphenix.protocol.events.PacketContainer;
 import com.comphenix.protocol.wrappers.BlockPosition;
 import com.comphenix.protocol.wrappers.WrappedBlockData;
 import me.SuperRonanCraft.BetterRTPAddons.Main;
+import me.SuperRonanCraft.BetterRTP.versions.AsyncHandler;
 import me.SuperRonanCraft.BetterRTPAddons.addons.portals.AddonPortals;
 import me.SuperRonanCraft.BetterRTPAddons.packets.BlockChangeArray;
 import me.SuperRonanCraft.BetterRTPAddons.packets.WrapperPlayServerBlockChange;
@@ -123,7 +124,7 @@ public class PortalsCache {
 
     private void preview(Location loc1, Location loc2) {
         ProtocolManager pm = ProtocolLibrary.getProtocolManager();
-        Bukkit.getScheduler().runTask(Main.getInstance(), () -> {
+        AsyncHandler.sync(() -> {
             PacketContainer packet = pm
                     .createPacket(PacketType.Play.Server.MULTI_BLOCK_CHANGE);
             Chunk chunk = loc1.getChunk();

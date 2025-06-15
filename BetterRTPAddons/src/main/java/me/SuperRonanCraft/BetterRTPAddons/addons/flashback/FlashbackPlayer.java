@@ -2,6 +2,7 @@ package me.SuperRonanCraft.BetterRTPAddons.addons.flashback;
 
 import io.papermc.lib.PaperLib;
 import me.SuperRonanCraft.BetterRTPAddons.Main;
+import me.SuperRonanCraft.BetterRTP.versions.AsyncHandler;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
@@ -21,7 +22,7 @@ public class FlashbackPlayer {
         this.oldLoc = oldLoc;
         if (warnings != null)
             createTimers(seconds, orderMap(warnings));
-        tasks.add(Bukkit.getScheduler().runTaskLater(Main.getInstance(), runFlashback(seconds), 20L * seconds));
+        tasks.add(AsyncHandler.syncLater(runFlashback(seconds), 20L * seconds));
     }
 
     void createTimers(Long seconds, TreeMap<Long, String> warnings) {
@@ -29,7 +30,7 @@ public class FlashbackPlayer {
             String str = entry.getValue();
             long time = seconds - entry.getKey();
             if (time >= 0)
-                tasks.add(Bukkit.getScheduler().runTaskLater(Main.getInstance(), runWarning(str), 20L * time));
+                tasks.add(AsyncHandler.syncLater(runWarning(str), 20L * time));
         }
     }
 

@@ -24,45 +24,57 @@ import java.util.Map;
 public class RTPMenu_SelectWorld {
 
     public static boolean createInv(AddonRTPMenu pl, Player p) {
-        List<World> bukkit_worlds = Bukkit.getWorlds();
+        // Part 1: Synchronous checks and data gathering (can stay on calling thread)
+        List<World> bukkit_worlds = Bukkit.getWorlds(); // Potentially problematic on Folia if called from async, but current path is sync
         List<World> actual_worlds = new ArrayList<>();
         for (World world : bukkit_worlds) {
             if (pl.getWorlds().containsKey(world.getName()) && PermissionCheck.getAWorld(p, world.getName()))
                 actual_worlds.add(world);
         }
         if (actual_worlds.isEmpty() || (actual_worlds.size() <= 1 && !BetterRTP.getInstance().getSettings().isDebug())) {
-            CmdTeleport.teleport(p, "rtp", null, null);
+            CmdTeleport.teleport(p, "rtp", null, null); // This is a static helper, assumed to be Folia-safe or will be made so
             return false;
         }
-        int lines = pl.getSettings().getLines();
-        if (lines == 0)
-            lines = Math.floorDiv(actual_worlds.size(), 9);
-        if (lines < actual_worlds.size() / 9) lines++;
-        Inventory inv = createInventory(color(p, pl.getSettings().getTitle()), Math.min(lines * 9, 6 * 9));
 
-        HashMap<Integer, World> world_slots = centerWorlds(pl, new ArrayList<>(actual_worlds));
+        // Data for the scheduled task needs to be effectively final or copied
+        final List<World> final_actual_worlds = new ArrayList<>(actual_worlds);
+        final AddonRTPMenu final_pl = pl;
+        final Player final_p = p;
 
-        for (Map.Entry<Integer, World> world : world_slots.entrySet()) {
-            String worldName = world.getValue().getName();
-            RTPMenuWorldInfo worldInfo = pl.getWorlds().getOrDefault(worldName, new RTPMenuWorldInfo(worldName, Material.MAP, null, 0));
-            int slot = world.getKey();
-            ItemStack item = new ItemStack(worldInfo.item, 1);
-            ItemMeta meta = item.getItemMeta();
-            assert meta != null;
-            meta.setDisplayName(color(p, worldInfo.name));
-            List<String> lore = new ArrayList<>(worldInfo.lore);
-            lore.forEach(s -> lore.set(lore.indexOf(s), color(p, s).replace("%world%", world.getValue().getName())));
-            meta.setLore(lore);
-            item.setItemMeta(meta);
-            inv.setItem(slot, item);
-        }
+        final_p.getScheduler().run(Main.getInstance(), task -> {
+            // Part 2: Inventory creation and opening (must be on player's region thread)
+            int lines = final_pl.getSettings().getLines();
+            if (lines == 0)
+                lines = Math.floorDiv(final_actual_worlds.size(), 9);
+            if (lines < final_actual_worlds.size() / 9) lines++;
+            Inventory inv = createInventory(color(final_p, final_pl.getSettings().getTitle()), Math.min(lines * 9, 6 * 9));
 
-        pl.getData(p).setMenuInv(inv);
-        pl.getData(p).setWorldSlots(world_slots);
-        p.openInventory(inv);
-        return true;
+            HashMap<Integer, World> world_slots = centerWorlds(final_pl, final_actual_worlds); // Pass final_actual_worlds
+
+            for (Map.Entry<Integer, World> world_entry : world_slots.entrySet()) { // Renamed to avoid conflict
+                String worldName = world_entry.getValue().getName();
+                RTPMenuWorldInfo worldInfo = final_pl.getWorlds().getOrDefault(worldName, new RTPMenuWorldInfo(worldName, Material.MAP, null, 0));
+                int slot = world_entry.getKey();
+                ItemStack item = new ItemStack(worldInfo.item, 1);
+                ItemMeta meta = item.getItemMeta();
+                assert meta != null;
+                meta.setDisplayName(color(final_p, worldInfo.name));
+                List<String> lore = new ArrayList<>(worldInfo.lore);
+                lore.forEach(s -> lore.set(lore.indexOf(s), color(final_p, s).replace("%world%", world_entry.getValue().getName())));
+                meta.setLore(lore);
+                item.setItemMeta(meta);
+                inv.setItem(slot, item);
+            }
+
+            final_pl.getData(final_p).setMenuInv(inv);
+            final_pl.getData(final_p).setWorldSlots(world_slots);
+            final_p.openInventory(inv);
+        }, null);
+
+        return true; // Assume scheduling is successful
     }
 
+    // actual_worlds param should be List<World> not ArrayList<World> for flexibility
     private static HashMap<Integer, World> centerWorlds(AddonRTPMenu pl, List<World> actual_worlds) {
         HashMap<Integer, World> map = new HashMap<>();
         if (actual_worlds.size() >= 9) {

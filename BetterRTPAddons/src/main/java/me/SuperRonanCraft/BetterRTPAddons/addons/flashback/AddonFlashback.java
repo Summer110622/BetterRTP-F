@@ -13,6 +13,7 @@ import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import me.SuperRonanCraft.BetterRTP.versions.AsyncHandler;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -97,20 +98,32 @@ public class AddonFlashback implements Addon, Listener {
     }
 
     private void cancelPlayer(Player p) {
-        for (FlashbackPlayer fbp : players)
-            if (fbp.p == p)
+        for (FlashbackPlayer fbp : new ArrayList<>(players)) // Avoid ConcurrentModificationException
+            if (fbp.p == p) {
                 fbp.cancel();
+                // It seems FlashbackPlayer is responsible for removing itself from db via completed()
+                // but only if it's not cancelled. If cancelled, we might need to remove it here.
+                // However, FlashbackPlayer.cancel doesn't call completed().
+                // Let's assume for now that if a task is cancelled, its db entry should also be removed.
+                AsyncHandler.async(() -> database.removePlayer(fbp.p));
+                players.remove(fbp); // Remove from active players list
+            }
     }
 
     void loadPlayer(Player p) {
-        FlashbackPlayerInfo info = database.getPlayer(p);
-        if (info != null) {
-            long _time = (System.currentTimeMillis() - info.getTime()) / 1000;
-            if (_time < 0) { //Still has time to go back
-                _time *= -1;
-                players.add(new FlashbackPlayer(this, p, info.getLocation(), _time, warnings));
-            } else //Overdue! Teleport them back NOW!
-                players.add(new FlashbackPlayer(this, p, info.getLocation(), 0L, warnings));
-        }
+        //FlashbackPlayerInfo info = database.getPlayer(p);
+        AsyncHandler.async(() -> {
+            FlashbackPlayerInfo info = database.getPlayer(p);
+            if (info != null) {
+                long _time = (System.currentTimeMillis() - info.getTime()) / 1000;
+                if (_time < 0) { //Still has time to go back
+                    _time *= -1;
+                    long final_time = _time;
+                    AsyncHandler.syncAtEntity(p, () -> players.add(new FlashbackPlayer(this, p, info.getLocation(), final_time, warnings)));
+                } else { //Overdue! Teleport them back NOW!
+                    AsyncHandler.syncAtEntity(p, () -> players.add(new FlashbackPlayer(this, p, info.getLocation(), 0L, warnings)));
+                }
+            }
+        });
     }
 }

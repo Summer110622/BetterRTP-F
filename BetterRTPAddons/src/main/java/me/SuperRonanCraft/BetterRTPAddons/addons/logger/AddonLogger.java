@@ -14,6 +14,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
+import me.SuperRonanCraft.BetterRTP.versions.AsyncHandler;
 
 import java.io.File;
 import java.io.IOException;
@@ -76,20 +77,40 @@ public class AddonLogger implements Addon, Listener {
     @EventHandler
     public void onCmd(RTP_CommandEvent e) {
         if (e instanceof RTP_CommandEvent_After) return;
-        String _str = e.getSendi().getName() + " executed `/rtp " + e.getCmd().getName() + "` at " + getDate();
-        Level lvl = Level.INFO;
-        if (e.getCmd() instanceof CmdReload)
-            lvl = Level.WARNING;
-        log(_str, lvl);
+        //Store required data for async task
+        final String senderName = e.getSendi().getName();
+        final String cmdName = e.getCmd().getName();
+        final boolean isReload = e.getCmd() instanceof CmdReload;
+
+        AsyncHandler.async(() -> {
+            String _str = senderName + " executed `/rtp " + cmdName + "` at " + getDate();
+            Level lvl = Level.INFO;
+            if (isReload)
+                lvl = Level.WARNING;
+            log(_str, lvl);
+        });
     }
 
     @EventHandler
     public void onTeleport(RTP_TeleportPostEvent e) {
-        String _str = e.getPlayer().getName() + " has teleported to " + e.getLocation().toString()
-                + " in world " + e.getLocation().getWorld().getName()
-                + " at" + getDate();
-        log(_str, Level.INFO);
-        database.log(e.getPlayer(), e.getOldLocation(), e.getLocation());
+        //Store required data for async task
+        final String playerName = e.getPlayer().getName();
+        final String locationString = e.getLocation().toString(); // Be careful with Location instances across threads if not immutable
+        final String worldName = e.getLocation().getWorld().getName(); // Same as above for World
+        // For database logging, ensure Player and Location objects are used safely if accessed across threads
+        // It's often better to extract all necessary serializable data before going async.
+        final Player player = e.getPlayer(); // Ok if only used for UUID/Name in DB thread
+        final Location oldLocation = e.getOldLocation().clone(); // Clone to be safe
+        final Location newLocation = e.getLocation().clone(); // Clone to be safe
+
+
+        AsyncHandler.async(() -> {
+            String _str = playerName + " has teleported to " + locationString
+                    + " in world " + worldName
+                    + " at" + getDate();
+            log(_str, Level.INFO);
+            database.log(player, oldLocation, newLocation);
+        });
     }
 
     private void log(String str, Level lvl) {
